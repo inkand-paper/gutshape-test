@@ -1,0 +1,196 @@
+﻿from pathlib import Path
+import typer
+from rich.console import Console
+from .scanner import CodeScanner
+from .reporter import Reporter
+
+app = typer.Typer(help=" GutShape - Codebase Guardian")
+console = Console()
+
+@app.command()
+def scan(
+    path: Path = typer.Argument(Path.cwd(), help="Path to scan"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
+    output: Path = typer.Option(None, "--output", "-o", help="Save report"),
+):
+    """Scan codebase for security issues"""
+    console.print(f"[bold cyan] Scanning {path.resolve()}...[/bold cyan]\n")
+    scanner = CodeScanner(str(path))
+    result = scanner.scan()
+    reporter = Reporter()
+    reporter.print_summary(result)
+    if output:
+        output.write_text(f"Scan: {result.timestamp}\nIssues: {result.total_issues}")
+        console.print(f"\n[green] Report saved to {output}[/green]")
+
+@app.command()
+def init(path: Path = typer.Argument(Path.cwd(), help="Project path")):
+    """Initialize GutShape in project"""
+    config_path = path / "gutshape.yaml"
+    if not config_path.exists():
+        config_path.write_text("# GutShape Configuration\nversion: '1.0'\n")
+        console.print(f"[green] Created {config_path}[/green]")
+    (path / ".gutshape").mkdir(exist_ok=True)
+    console.print("[bold green] GutShape initialized![/bold green]")
+
+@app.command()
+def aifix(path: Path = typer.Argument(Path.cwd(), help="Path to scan")):
+    """AI-powered fix suggestions (Milestone 2)"""
+    from .analyzer import AIAnalyzer
+    console.print("[bold cyan] AI Fix Suggestions[/bold cyan]\n")
+    scanner = CodeScanner(str(path))
+    result = scanner.scan()
+    if result.total_issues == 0:
+        console.print("[green] No issues found![/green]")
+        return
+    ai = AIAnalyzer()
+    for issue in result.issues[:3]:
+        console.print(f"[yellow] {issue.file_path.name}:{issue.line_number}[/yellow]")
+        console.print(f"   Issue: {issue.description}")
+        fix = ai.suggest_fix(issue)
+        if fix:
+            console.print(f"   [green] Fix:[/green] {fix.suggestion[:150]}")
+        else:
+            console.print(f"   [red] Could not generate suggestion[/red]")
+        console.print()
+
+@app.command()
+def fix(path: Path = typer.Argument(Path.cwd(), help="Path to scan")):
+    """Auto-fix security issues (dry run by default)"""
+    from .auto_fixer import AutoFixer
+    console.print("[bold cyan] Auto-Fixer[/bold cyan]\n")
+    console.print("[yellow] DRY RUN MODE - No changes will be made[/yellow]")
+    console.print("[dim]To actually fix the files, run: gutshape apply[/dim]")
+    scanner = CodeScanner(str(path))
+    result = scanner.scan()
+    if result.total_issues == 0:
+        console.print("[green] No issues found![/green]")
+        return
+    console.print(f"Found [yellow]{result.total_issues}[/yellow] issues\n")
+    fixer = AutoFixer(dry_run=True)
+    fixes = fixer.apply_fixes(result.issues, dry_run=True)
+    if fixes:
+        console.print("[bold]Would apply these fixes:[/bold]\n")
+        for fix_item in fixes:
+            console.print(f"  [yellow] Would fix:[/yellow] {fix_item['issue']}")
+        console.print("\n[bold green]To apply fixes, run:[/bold green]")
+        console.print(f"  gutshape apply")
+    else:
+        console.print("[yellow]No automatic fixes available[/yellow]")
+
+@app.command()
+def apply(path: Path = typer.Argument(Path.cwd(), help="Path to scan")):
+    """Actually apply fixes to your code"""
+    from .auto_fixer import AutoFixer
+    console.print("[bold cyan] Applying Fixes[/bold cyan]\n")
+    scanner = CodeScanner(str(path))
+    result = scanner.scan()
+    if result.total_issues == 0:
+        console.print("[green] No issues found![/green]")
+        return
+    console.print(f"Found [yellow]{result.total_issues}[/yellow] issues\n")
+    fixer = AutoFixer(dry_run=False)
+    fixes = fixer.apply_fixes(result.issues, dry_run=False)
+    if fixes:
+        console.print("[bold green] Fixes applied:[/bold green]\n")
+        for fix_item in fixes:
+            console.print(f"  [green] Fixed:[/green] {fix_item['issue']}")
+        console.print("\n[bold green]Run 'gutshape scan' to verify fixes[/bold green]")
+    else:
+        console.print("[yellow]No automatic fixes available[/yellow]")
+
+def main():
+    app()
+
+if __name__ == "__main__":
+    main()
+
+@app.command()
+def aifix(path: Path = typer.Argument(Path.cwd(), help="Path to scan")):
+    """AI-powered fix suggestions (Milestone 2)"""
+    from .analyzer import AIAnalyzer
+    from rich.panel import Panel
+    from rich.markdown import Markdown
+    
+    console.print("[bold cyan] AI Fix Suggestions[/bold cyan]\n")
+    scanner = CodeScanner(str(path))
+    result = scanner.scan()
+    
+    if result.total_issues == 0:
+        console.print("[green] No issues found![/green]")
+        return
+    
+    ai = AIAnalyzer()
+    
+    for issue in result.issues[:3]:
+        console.print(f"\n[bold yellow] {issue.file_path.name}:{issue.line_number}[/bold yellow]")
+        console.print(f"[dim]Issue: {issue.description}[/dim]\n")
+        
+        fix = ai.suggest_fix(issue)
+        if fix:
+            # Show full response without truncation
+            console.print(Panel(fix.suggestion, title=" Fix Suggestion", border_style="green"))
+        else:
+            console.print("[red] Could not generate suggestion[/red]")
+
+
+@app.command()
+def pr(path: Path = typer.Argument(Path.cwd(), help="Path to project")):
+    """Create GitHub PR with fixes"""
+    from .auto_fixer import AutoFixer
+    from .scanner import CodeScanner
+    from .github_integration import GitHubPR
+    from .test_runner import TestRunner
+    import os
+    
+    console.print("[bold cyan]🐙 Creating GitHub PR[/bold cyan]\n")
+    
+    scanner = CodeScanner(str(path))
+    result = scanner.scan()
+    
+    if result.total_issues == 0:
+        console.print("[green]✅ No issues found![/green]")
+        return
+    
+    console.print(f"Found [yellow]{result.total_issues}[/yellow] issues\n")
+    
+    fixer = AutoFixer(dry_run=False)
+    fixes = fixer.apply_fixes(result.issues, dry_run=False)
+    
+    if fixes:
+        console.print(f"[green]✅ Applied {len(fixes)} fixes locally[/green]\n")
+        
+        console.print("[dim]Running tests...[/dim]")
+        tester = TestRunner(str(path))
+        test_results = tester.run_all_tests()
+        
+        if not test_results["overall_success"]:
+            console.print("[red]❌ Tests failed! Rolling back...[/red]")
+            fixer.rollback()
+            console.print("[yellow]Rollback complete. Fixes not applied.[/yellow]")
+            return
+        
+        console.print("[green]✅ Tests passed![/green]\n")
+        
+        gh = GitHubPR(str(path))
+        pr_number = gh.auto_fix_and_pr(fixes)
+        
+        if pr_number:
+            console.print(f"[bold green]✅ PR #{pr_number} created![/bold green]")
+            repo = os.getenv('GITHUB_REPO', 'your-repo')
+            console.print(f"[dim]Review at: https://github.com/{repo}/pull/{pr_number}[/dim]")
+        else:
+            console.print("[yellow]⚠️ GitHub not configured. Fixes applied locally only.[/yellow]")
+            console.print("[dim]Set GITHUB_TOKEN and GITHUB_REPO in .env[/dim]")
+    else:
+        console.print("[yellow]No fixes to apply[/yellow]")
+
+@app.command()
+def rollback():
+    """Rollback last fixes"""
+    from .auto_fixer import AutoFixer
+    fixer = AutoFixer(dry_run=False)
+    if fixer.rollback():
+        console.print("[green]✅ Rollback successful![/green]")
+    else:
+        console.print("[yellow]No backups found[/yellow]")

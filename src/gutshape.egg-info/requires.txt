@@ -1,0 +1,5 @@
+pyyaml
+loguru
+typer
+rich
+pathspec
